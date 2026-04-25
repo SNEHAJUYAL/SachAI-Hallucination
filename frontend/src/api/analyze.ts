@@ -1,6 +1,7 @@
 import type { DashboardData, Claim, ClaimType, SourceSegment } from '@/types/dashboard';
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const FRONTEND_SECRET = import.meta.env.VITE_FRONTEND_SECRET;
 
 interface BackendResult {
   claim: string;
@@ -39,7 +40,10 @@ function toNliScores(result: BackendResult) {
 export async function analyzeText(source: string, response: string): Promise<DashboardData> {
   const res = await fetch(`${API_URL}/analyze`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'x-api-key': FRONTEND_SECRET
+    },
     body: JSON.stringify({ source, response }),
   });
 
