@@ -1,12 +1,11 @@
 import os
 import spacy
-import torch
 import time
 import requests
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sentence_transformers import util
+import numpy as np
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -25,7 +24,6 @@ class AnalyzeRequest(BaseModel):
     response: str
 
 # --- Model Init ---
-device = "cuda" if torch.cuda.is_available() else "cpu"
 nlp_ner = spacy.load("en_core_web_sm")
 
 MODEL_PATH = "/kaggle/input/notebooks/anirbandasbit/sentenceclassifier/output/model-best"
@@ -40,6 +38,13 @@ HF_HEADERS = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "applicatio
 # --- Pipeline Functions ---
 def has_verb(tokens):
     return any(tok.pos_ in {"VERB", "AUX"} for tok in tokens)
+
+# calculate cosine similarity
+def cos_sim_numpy(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Cosine similarity matrix between rows of a and rows of b."""
+    a_norm = a / (np.linalg.norm(a, axis=1, keepdims=True) + 1e-9)
+    b_norm = b / (np.linalg.norm(b, axis=1, keepdims=True) + 1e-9)
+    return a_norm @ b_norm.T  # shape: (len_a, len_b)
 
 def extract_claims(text):
     split_words = {"and", "but", "also", "however"}
@@ -70,7 +75,7 @@ def classify_intent(text):
     doc = nlp_intent(text)
     return max(doc.cats, key=doc.cats.get)
 
-def get_embeddings(sentences: list[str]) -> torch.Tensor:
+def get_embeddings(sentences: list[str]) -> np.ndarray:
     payload = {
         "inputs": sentences,
         "options": {"wait_for_model": True}
@@ -83,7 +88,7 @@ def get_embeddings(sentences: list[str]) -> torch.Tensor:
             continue
         try:
             data = resp.json()
-            return torch.tensor(data, dtype=torch.float32)
+            return np.array(data, dtype=np.float32)
         except Exception as e:
             print(f"[HF Embeddings] Parse error: {e} | {resp.text!r}")
             time.sleep(2 ** attempt)
@@ -142,15 +147,16 @@ def build_alignment_matrix(ai_claims, source_sentences):
     # source_emb = embedder.encode(source_sentences, convert_to_tensor=True, device=device)
     claim_emb = get_embeddings(ai_claims)
     source_emb = get_embeddings(source_sentences)
-    matrix = util.cos_sim(claim_emb, source_emb)
+    matrix = cos_sim_numpy(claim_emb, source_emb)
     result = []
     for i in range(len(ai_claims)):
-        max_score, max_idx = torch.max(matrix[i], dim=0)
+        max_idx = int(np.argmax(matrix[i]))
+        max_score = float(matrix[i][max_idx])
         result.append({
-            "S_Max": round(max_score.item(), 4),
-            "Source_Index": max_idx.item(),
-            "Matched_Sentence": source_sentences[max_idx.item()],
-            "matrix_row": [round(v.item(), 4) for v in matrix[i]],
+            "S_Max": round(max_score, 4),
+            "Source_Index": max_idx,
+            "Matched_Sentence": source_sentences[max_idx],
+            "matrix_row": [round(float(v), 4) for v in matrix[i]],
         })
     return result
 
