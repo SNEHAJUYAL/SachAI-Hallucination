@@ -12,7 +12,7 @@ load_dotenv()
 
 app = FastAPI()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
-# CORS(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_URL],
@@ -252,5 +252,6 @@ async def analyze(body: AnalyzeRequest, request: Request):
     }
 
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    app.run("app:app", host="0.0.0.0", port=port)
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
